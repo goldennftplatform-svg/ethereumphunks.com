@@ -11,18 +11,20 @@ npm test
 npm run sandbox
 ```
 
-Open **http://127.0.0.1:8895**. This is a disposable local EVM (chain 31337), not a publicly hosted mainnet marketplace. It generates fresh test accounts on startup, gives them fake ETH, deploys the contract locally, and simulates Ethscriptions ownership from the contract's ESIP-2 events. Real minted assets are never deposited or moved. The catalogue contains **1,000 artwork previews (#0–999)** with 40 items per page and a jump-to-number control. All start as simulated Seller assets; this does not assert ownership or mint status on Ethereum mainnet.
+Open **http://127.0.0.1:8895**. This is a disposable local EVM (chain 31337), not a publicly hosted mainnet marketplace. It generates fresh test accounts on startup, gives them fake ETH, deploys the contract locally, and simulates Ethscriptions ownership from the contract's ESIP-2 events. Real minted assets are never deposited or moved. There are **10 test pieces (#0–9)**: Seller holds #0–5, Buyer holds #6–7, and Bidder holds #8–9. Each account starts with 100 fake ETH. This does not assert ownership or mint status on Ethereum mainnet. The separate public 1,000-image artwork preview remains available in the DOSWAPZ repository.
 
 Windows shortcut: double-click `START-MARKET-LAB.cmd` (requires Node.js/npm). If the lab is already running on port 8895, use that instance instead of starting another.
 
-1. As **Seller**, DEPOSIT a piece, then MINE 5 BLOCKS.
-2. LIST FOR SALE. Switch to **Buyer** and BUY. Check ownership, seller credit, and creator royalty credit.
+1. As **Seller**, open MY WALLET and MOVE TO ESCROW. The UI opens MY ESCROW; by default five local blocks are mined automatically to satisfy the contract cooldown. Disable this in Advanced test controls to exercise the manual wait.
+2. LIST FOR SALE. The UI opens FOR SALE. Switch to **Buyer** and BUY. The purchased piece appears in the buyer's MY WALLET. Check seller credit and creator royalty credit.
 3. Switch back to Seller and WITHDRAW MY CREDIT. Withdrawal is a separate transaction.
 4. Deposit another piece and START AUCTION. Bid as Buyer, then outbid as Bidder by at least 5%.
 5. ADVANCE 1 HOUR +, SETTLE AUCTION. The winner receives the simulated asset. The previous bidder withdraws their refund.
 6. A no-bid auction returns the piece to its seller after settlement. An active auction cannot be cancelled or relisted.
 
-Restarting resets everything. The server binds only to 127.0.0.1, checks the Host/Origin/header on mutations, and does not expose JSON-RPC or private keys. **Do not deploy sandbox.cjs to a public host.** It is an intentionally auto-signing local test harness.
+Use RETURN TO MY WALLET for an inactive escrow deposit, or CANCEL SALE · RETURN TO WALLET for a listed piece. Active auctions must finish and settle. The MY ESCROW tab includes your listed and auctioned deposits so you can always locate them.
+
+RESET 10 TEST PIECES asks for confirmation and restores the deployed local chain snapshot, ten starting owners, balances, credits and activity. It does not touch Ethereum mainnet or Netlify. Restarting also resets everything. The server binds only to 127.0.0.1, checks the Host/Origin/header on mutations, and does not expose JSON-RPC or private keys. **Do not deploy sandbox.cjs to a public host.** It is an intentionally auto-signing local test harness.
 
 ## What is implemented
 

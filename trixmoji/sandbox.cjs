@@ -11,29 +11,27 @@ const ORIGIN = 'http://127.0.0.1:' + PORT
 async function main() {
  const s = await sandbox()
  const personas = { seller: s.seller, buyer: s.buyer, bidder: s.bidder }
- const items = Array.from({ length: 1000 }, (_, number) => ({ number, id: ethers.utils.id('LOCAL-DEMO-PHUNK-' + number), owner: s.seller.address, depositor: '' }))
+ const initialItems = () => Array.from({ length: 10 }, (_, number) => ({ number, id: ethers.utils.id('LOCAL-DEMO-PHUNK-' + number),
+  owner: number < 6 ? s.seller.address : number < 8 ? s.buyer.address : s.bidder.address, depositor: '' }))
+ let items = initialItems()
+ let snapshot = await s.provider.send('evm_snapshot', [])
  const events = []
  let queue = Promise.resolve()
  function serial(fn) { const result = queue.then(fn); queue = result.catch(() => {}); return result }
- function pageNumber(value) {
-  const page = Number(value || 0)
-  if (!Number.isInteger(page) || page < 0 || page >= 25) throw new Error('Page must be between 0 and 24')
-  return page
- }
- async function state(page = 0) {
+ async function state() {
   const head = await s.provider.getBlock('latest')
   const accounts = {}
   for (const [name, wallet] of Object.entries(personas)) accounts[name] = { address: wallet.address, balance: ethers.utils.formatEther(await wallet.getBalance()), credit: ethers.utils.formatEther(await s.market.credits(wallet.address)) }
   accounts.creator = { address: s.creator.address, credit: ethers.utils.formatEther(await s.market.credits(s.creator.address)) }
   const rows = []
-  for (const item of items.slice(page * 40, page * 40 + 40)) {
+  for (const item of items) {
    const seller = item.depositor || s.seller.address
    const offer = await s.market.listings(seller, item.id), auction = await s.market.auctions(seller, item.id)
    rows.push({ ...item, price: ethers.utils.formatEther(offer.price), nonce: offer.nonce.toString(),
     auction: { reserve: ethers.utils.formatEther(auction.reserve), amount: ethers.utils.formatEther(auction.amount), end: auction.end.toNumber(), bidder: auction.bidder, nonce: auction.nonce.toString(), settled: auction.settled },
     cooldown: item.depositor ? (await s.market.blocksRemainingUntilValidTransfer(seller, item.id)).toNumber() : 0 })
   }
-  return { mode: 'LOCAL EVM SANDBOX — FAKE ETH', chainId: 31337, contract: s.market.address, block: head.number, timestamp: head.timestamp, accounts, page, pageSize: 40, total: items.length, items: rows, events: events.slice(-20).reverse() }
+  return { mode: 'LOCAL EVM SANDBOX — FAKE ETH', chainId: 31337, contract: s.market.address, block: head.number, timestamp: head.timestamp, accounts, total: items.length, items: rows, events: events.slice(-20).reverse() }
  }
  function consume(receipt) {
   for (const event of receipt.events || []) {
@@ -47,6 +45,13 @@ async function main() {
  async function action(body) {
   const wallet = personas[body.persona]
   if (!wallet) throw new Error('Choose a test persona')
+  if (body.action === 'reset') {
+   if (body.confirm !== 'RESET LOCAL DEMO') throw new Error('Reset confirmation required')
+   if (!await s.provider.send('evm_revert', [snapshot])) throw new Error('Reset failed; restart the local server')
+   snapshot = await s.provider.send('evm_snapshot', [])
+   items = initialItems(); events.length = 0
+   return { message: 'Local demo reset. Seller has 6 pieces; Buyer and Bidder each have 2. Fake balances and credits restored.' }
+  }
   if (body.action === 'advance') { await s.advance(3700); return { message: 'Advanced local-chain time by 3,700 seconds.' } }
   if (body.action === 'mine') { await s.mine(5); return { message: 'Mined five local blocks.' } }
   const item = items.find(i => i.number === Number(body.number))
@@ -90,10 +95,13 @@ async function main() {
    } else throw new Error('Unknown action')
   }
   const receipt = await tx.wait()
-  if (body.action === 'deposit') { item.owner = s.market.address; item.depositor = wallet.address }
+  if (body.action === 'deposit') {
+   item.owner = s.market.address; item.depositor = wallet.address
+   if (body.autoMine !== false) await s.mine(5)
+  }
   consume(receipt)
   events.push({ action: body.action, number: item && item.number, persona: body.persona, hash: receipt.transactionHash, gas: receipt.gasUsed.toString() })
-  return { message: body.action + ' confirmed on LOCAL chain', hash: receipt.transactionHash }
+  return { message: body.action === 'deposit' && body.autoMine !== false ? 'Piece moved to MY ESCROW. Five local cooldown blocks mined automatically.' : body.action + ' confirmed on LOCAL chain', hash: receipt.transactionHash }
  }
  const server = http.createServer(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
@@ -102,13 +110,12 @@ async function main() {
   try {
    if (req.headers.host !== '127.0.0.1:' + PORT && req.headers.host !== 'localhost:' + PORT) return json(403, { error: 'Loopback host required' })
    const url = new URL(req.url, ORIGIN)
-   if (url.pathname === '/api/state' && req.method === 'GET') { const page = pageNumber(url.searchParams.get('page')); return json(200, await serial(() => state(page))) }
+   if (url.pathname === '/api/state' && req.method === 'GET') return json(200, await serial(state))
    if (url.pathname === '/api/action' && req.method === 'POST') {
     if (![ORIGIN, 'http://localhost:' + PORT].includes(req.headers.origin) || req.headers['x-sandbox'] !== '1' || !String(req.headers['content-type']).startsWith('application/json')) return json(403, { error: 'Local sandbox origin required' })
     let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 4096) return json(413, { error: 'Request too large' }) }
     const body = JSON.parse(raw)
-    const page = pageNumber(body.page)
-    return json(200, await serial(async () => ({ ok: true, ...await action(body), state: await state(page) })))
+    return json(200, await serial(async () => ({ ok: true, ...await action(body), state: await state() })))
    }
    if (req.method !== 'GET') return json(405, { error: 'Method not allowed' })
    if (url.pathname === '/' || url.pathname === '/app.js' || url.pathname === '/style.css') {
@@ -116,7 +123,7 @@ async function main() {
     const data = fs.readFileSync(path.join(__dirname, 'web', filename))
     res.writeHead(200, { 'Content-Type': filename.endsWith('.js') ? 'text/javascript' : filename.endsWith('.css') ? 'text/css' : 'text/html' }); return res.end(data)
    }
-   const image = /^\/art\/(0|[1-9]\d{0,2})\.png$/.exec(url.pathname)
+   const image = /^\/art\/([0-9])\.png$/.exec(url.pathname)
    if (image) {
     const file = path.resolve(__dirname, '../../DOSWAPZ/assets/ethscriptions/phunks/img', image[1] + '.png')
     if (fs.existsSync(file)) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(fs.readFileSync(file)) }
