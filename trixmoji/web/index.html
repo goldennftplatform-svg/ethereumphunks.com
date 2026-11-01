@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TRIXMOJI · Market Lab</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+ <div class="sandbox-banner">LOCAL TEST CHAIN 31337 · FAKE ETH · NO WALLET CONNECTION · NOT LIVE RESALE</div>
+ <main>
+  <header><div><p class="eyebrow">DOSWAPZ / TRIXMOJI PHUNKS</p><h1>MARKET LAB<span>Sell it. Bid it. Own it.</span></h1></div><div class="network"><span class="dot"></span> LOCAL EVM <small id="block">Starting…</small></div></header>
+  <section class="intro"><p>A working settlement sandbox for fixed-price sales and timed auctions. The displayed art is a sample; these are simulated assets, not your real minted pieces.</p><p>Sales credit <strong>97.5% to the seller</strong> and <strong>2.5% to the creator</strong>. Outbid funds and proceeds are withdrawn separately.</p></section>
+  <section class="controls"><label>TEST AS<select id="persona"><option value="seller">Seller · original owner</option><option value="buyer">Buyer · first bidder</option><option value="bidder">Bidder · competing buyer</option></select></label><div id="wallet" class="wallet"></div><button id="withdraw">WITHDRAW MY CREDIT</button></section>
+  <nav><button id="refresh">REFRESH</button><button id="mine">MINE 5 BLOCKS</button><button id="advance">ADVANCE 1 HOUR +</button><span>Deposit cooldown: 5 blocks · Auction: 1 hour</span></nav>
+  <p id="status" role="status" aria-live="polite">Loading local chain…</p>
+  <section id="cards" class="cards" aria-label="Marketplace items"></section>
+  <section class="ledger"><h2>SETTLEMENT ACTIVITY</h2><p id="creator"></p><div id="events"></div></section>
+  <details><summary>How to test / what this proves</summary><ol><li>As Seller, deposit a piece. Mine five blocks.</li><li>Set a price and list it. Switch to Buyer and buy. Check the new owner and seller/creator credits.</li><li>For another piece, deposit and start an auction. Bid as Buyer, then outbid as Bidder (at least 5% higher).</li><li>Advance time, settle the auction, then withdraw refunded bids and seller proceeds.</li></ol><p>This sandbox executes real Solidity on a disposable local EVM. Ethscriptions ownership is modeled from transfer events here; it is not a live mainnet indexer test. A production deployment needs a trusted indexer-verification signer, contract review, and end-to-end transfer verification.</p><p>No private keys, seed phrases, browser-wallet approvals, or real ETH are needed. Restarting the server resets this sandbox.</p></details>
+  <footer id="contract"></footer>
+ </main><script src="/app.js"></script>
+</body></html>

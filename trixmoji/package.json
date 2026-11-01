@@ -1,0 +1,7 @@
+{
+  "name": "trixmoji-secondary-market",
+  "private": true,
+  "scripts": { "test": "node --test test/*.test.cjs", "build": "node build.cjs", "sandbox": "node sandbox.cjs" },
+  "dependencies": { "@openzeppelin/contracts": "5.0.2", "ethers": "5.7.2", "solc": "0.8.20" },
+  "devDependencies": { "ganache": "7.9.2" }
+}
