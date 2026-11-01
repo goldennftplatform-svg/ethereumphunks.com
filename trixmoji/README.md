@@ -11,7 +11,7 @@ npm test
 npm run sandbox
 ```
 
-Open **http://127.0.0.1:8895**. This is a disposable local EVM (chain 31337), not a publicly hosted mainnet marketplace. It generates fresh test accounts on startup, gives them fake ETH, deploys the contract locally, and simulates Ethscriptions ownership from the contract's ESIP-2 events. Real minted assets are never deposited or moved. Sample artwork #419/#453/#534 is shown only to make testing recognizable.
+Open **http://127.0.0.1:8895**. This is a disposable local EVM (chain 31337), not a publicly hosted mainnet marketplace. It generates fresh test accounts on startup, gives them fake ETH, deploys the contract locally, and simulates Ethscriptions ownership from the contract's ESIP-2 events. Real minted assets are never deposited or moved. The catalogue contains **1,000 artwork previews (#0–999)** with 40 items per page and a jump-to-number control. All start as simulated Seller assets; this does not assert ownership or mint status on Ethereum mainnet.
 
 Windows shortcut: double-click `START-MARKET-LAB.cmd` (requires Node.js/npm). If the lab is already running on port 8895, use that instance instead of starting another.
 

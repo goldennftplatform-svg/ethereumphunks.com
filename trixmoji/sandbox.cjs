@@ -11,24 +11,29 @@ const ORIGIN = 'http://127.0.0.1:' + PORT
 async function main() {
  const s = await sandbox()
  const personas = { seller: s.seller, buyer: s.buyer, bidder: s.bidder }
- const items = [419, 453, 534].map(number => ({ number, id: ethers.utils.id('LOCAL-DEMO-PHUNK-' + number), owner: s.seller.address, depositor: '' }))
+ const items = Array.from({ length: 1000 }, (_, number) => ({ number, id: ethers.utils.id('LOCAL-DEMO-PHUNK-' + number), owner: s.seller.address, depositor: '' }))
  const events = []
  let queue = Promise.resolve()
  function serial(fn) { const result = queue.then(fn); queue = result.catch(() => {}); return result }
- async function state() {
+ function pageNumber(value) {
+  const page = Number(value || 0)
+  if (!Number.isInteger(page) || page < 0 || page >= 25) throw new Error('Page must be between 0 and 24')
+  return page
+ }
+ async function state(page = 0) {
   const head = await s.provider.getBlock('latest')
   const accounts = {}
   for (const [name, wallet] of Object.entries(personas)) accounts[name] = { address: wallet.address, balance: ethers.utils.formatEther(await wallet.getBalance()), credit: ethers.utils.formatEther(await s.market.credits(wallet.address)) }
   accounts.creator = { address: s.creator.address, credit: ethers.utils.formatEther(await s.market.credits(s.creator.address)) }
   const rows = []
-  for (const item of items) {
+  for (const item of items.slice(page * 40, page * 40 + 40)) {
    const seller = item.depositor || s.seller.address
    const offer = await s.market.listings(seller, item.id), auction = await s.market.auctions(seller, item.id)
    rows.push({ ...item, price: ethers.utils.formatEther(offer.price), nonce: offer.nonce.toString(),
     auction: { reserve: ethers.utils.formatEther(auction.reserve), amount: ethers.utils.formatEther(auction.amount), end: auction.end.toNumber(), bidder: auction.bidder, nonce: auction.nonce.toString(), settled: auction.settled },
     cooldown: item.depositor ? (await s.market.blocksRemainingUntilValidTransfer(seller, item.id)).toNumber() : 0 })
   }
-  return { mode: 'LOCAL EVM SANDBOX — FAKE ETH', chainId: 31337, contract: s.market.address, block: head.number, timestamp: head.timestamp, accounts, items: rows, events: events.slice(-20).reverse() }
+  return { mode: 'LOCAL EVM SANDBOX — FAKE ETH', chainId: 31337, contract: s.market.address, block: head.number, timestamp: head.timestamp, accounts, page, pageSize: 40, total: items.length, items: rows, events: events.slice(-20).reverse() }
  }
  function consume(receipt) {
   for (const event of receipt.events || []) {
@@ -97,12 +102,13 @@ async function main() {
   try {
    if (req.headers.host !== '127.0.0.1:' + PORT && req.headers.host !== 'localhost:' + PORT) return json(403, { error: 'Loopback host required' })
    const url = new URL(req.url, ORIGIN)
-   if (url.pathname === '/api/state' && req.method === 'GET') return json(200, await serial(state))
+   if (url.pathname === '/api/state' && req.method === 'GET') { const page = pageNumber(url.searchParams.get('page')); return json(200, await serial(() => state(page))) }
    if (url.pathname === '/api/action' && req.method === 'POST') {
     if (![ORIGIN, 'http://localhost:' + PORT].includes(req.headers.origin) || req.headers['x-sandbox'] !== '1' || !String(req.headers['content-type']).startsWith('application/json')) return json(403, { error: 'Local sandbox origin required' })
     let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 4096) return json(413, { error: 'Request too large' }) }
     const body = JSON.parse(raw)
-    return json(200, await serial(async () => ({ ok: true, ...await action(body), state: await state() })))
+    const page = pageNumber(body.page)
+    return json(200, await serial(async () => ({ ok: true, ...await action(body), state: await state(page) })))
    }
    if (req.method !== 'GET') return json(405, { error: 'Method not allowed' })
    if (url.pathname === '/' || url.pathname === '/app.js' || url.pathname === '/style.css') {
@@ -110,7 +116,7 @@ async function main() {
     const data = fs.readFileSync(path.join(__dirname, 'web', filename))
     res.writeHead(200, { 'Content-Type': filename.endsWith('.js') ? 'text/javascript' : filename.endsWith('.css') ? 'text/css' : 'text/html' }); return res.end(data)
    }
-   const image = /^\/art\/(419|453|534)\.png$/.exec(url.pathname)
+   const image = /^\/art\/(0|[1-9]\d{0,2})\.png$/.exec(url.pathname)
    if (image) {
     const file = path.resolve(__dirname, '../../DOSWAPZ/assets/ethscriptions/phunks/img', image[1] + '.png')
     if (fs.existsSync(file)) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(fs.readFileSync(file)) }

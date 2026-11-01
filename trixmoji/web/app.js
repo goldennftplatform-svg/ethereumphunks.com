@@ -1,6 +1,6 @@
 (() => {
  'use strict'
- let state, busy = false
+ let state, busy = false, page = 0
  const el = id => document.getElementById(id)
  const persona = () => el('persona').value
  const short = address => address.slice(0, 7) + '…' + address.slice(-5)
@@ -8,13 +8,16 @@
  const label = address => Object.entries(state.accounts).find(([, a]) => eq(a.address, address))?.[0] || (eq(address, state.contract) ? 'MARKET ESCROW' : short(address))
  function status(text, error = false) { el('status').textContent = text; el('status').className = error ? 'error' : '' }
  async function refresh() {
-  try { const r = await fetch('/api/state'); const data = await r.json(); if (!r.ok) throw new Error(data.error); state = data; draw() } catch (e) { status(e.message, true) }
+  if (busy) return
+  busy = true; draw()
+  try { const r = await fetch('/api/state?page=' + page); const data = await r.json(); if (!r.ok) throw new Error(data.error); state = data } catch (e) { status(e.message, true) }
+  finally { busy = false; draw() }
  }
  async function action(kind, number, price) {
   if (busy) return
   busy = true; draw(); status('Executing ' + kind + ' on local chain…')
   try {
-   const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sandbox': '1' }, body: JSON.stringify({ action: kind, number, price, persona: persona() }) })
+   const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sandbox': '1' }, body: JSON.stringify({ action: kind, number, price, persona: persona(), page }) })
    const data = await r.json(); if (!r.ok || !data.ok) throw new Error(data.error || 'Action failed')
    state = data.state; status(data.message + (data.hash ? ' · ' + short(data.hash) : ''))
   } catch (e) { status(e.message, true) }
@@ -27,6 +30,10 @@
   el('wallet').textContent = short(account.address) + ' · ' + Number(account.balance).toFixed(4) + ' test ETH · CREDIT ' + account.credit + ' ETH'
   el('withdraw').disabled = busy || Number(account.credit) === 0
   el('persona').disabled = busy
+  el('previous').disabled = busy || state.page === 0
+  el('next').disabled = busy || (state.page + 1) * state.pageSize >= state.total
+  el('go').disabled = busy
+  el('pageInfo').textContent = (state.page * state.pageSize + 1) + '–' + Math.min((state.page + 1) * state.pageSize, state.total) + ' / ' + state.total + ' ARTWORKS'
   for (const id of ['refresh', 'mine', 'advance']) el(id).disabled = busy
   el('contract').textContent = 'LOCAL CONTRACT: ' + state.contract + ' · test assets reset when the server restarts'
   el('creator').textContent = 'Creator royalty credit: ' + state.accounts.creator.credit + ' test ETH'
@@ -37,7 +44,7 @@
    const listed = Number(item.price) > 0
    const card = document.createElement('article'); card.className = 'card'
    const art = document.createElement('div'); art.className = 'art'
-   const img = document.createElement('img'); img.src = '/art/' + item.number + '.png'; img.alt = 'Demo Phunk ' + item.number; art.appendChild(img)
+   const img = document.createElement('img'); img.src = '/art/' + item.number + '.png'; img.alt = 'Demo Phunk ' + item.number; img.loading = 'lazy'; img.decoding = 'async'; art.appendChild(img)
    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = auction ? ended ? 'READY TO SETTLE' : 'AUCTION' : listed ? 'FOR SALE' : item.depositor ? 'DEPOSITED' : 'IN WALLET'; art.appendChild(badge)
    card.appendChild(art)
    const body = document.createElement('div'); body.className = 'body'
@@ -69,5 +76,13 @@
  el('mine').onclick = () => action('mine')
  el('advance').onclick = () => action('advance')
  el('withdraw').onclick = () => action('withdraw')
+ el('previous').onclick = () => { if (busy) return; page = Math.max(0, page - 1); refresh() }
+ el('next').onclick = () => { if (busy) return; page = Math.min(24, page + 1); refresh() }
+ el('go').onclick = () => {
+  if (busy) return
+  const number = Number(el('jump').value)
+  if (!Number.isInteger(number) || number < 0 || number > 999) { status('Enter a Phunk number from 0 to 999.', true); return }
+  page = Math.floor(number / 40); refresh()
+ }
  refresh().then(() => { if (state) status('Ready. Start as Seller: deposit a test piece, then mine five blocks.') })
 })()
