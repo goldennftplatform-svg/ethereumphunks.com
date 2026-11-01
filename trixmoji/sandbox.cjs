@@ -6,11 +6,12 @@ const fs = require('fs')
 const path = require('path')
 const { ethers } = require('ethers')
 const { sandbox } = require('./lib/sandbox-chain.cjs')
+const { recipientFor } = require('./lib/sandbox-transfer.cjs')
 const PORT = 8895
 const ORIGIN = 'http://127.0.0.1:' + PORT
 async function main() {
  const s = await sandbox()
- const personas = { seller: s.seller, buyer: s.buyer, bidder: s.bidder }
+ const personas = { seller: s.seller, buyer: s.buyer, bidder: s.bidder, friend: s.friend }
  const initialItems = () => Array.from({ length: 10 }, (_, number) => ({ number, id: ethers.utils.id('LOCAL-DEMO-PHUNK-' + number),
   owner: number < 6 ? s.seller.address : number < 8 ? s.buyer.address : s.bidder.address, depositor: '' }))
  let items = initialItems()
@@ -43,20 +44,20 @@ async function main() {
   }
  }
  async function action(body) {
-  const wallet = personas[body.persona]
+  const wallet = Object.prototype.hasOwnProperty.call(personas, body.persona) && personas[body.persona]
   if (!wallet) throw new Error('Choose a test persona')
   if (body.action === 'reset') {
    if (body.confirm !== 'RESET LOCAL DEMO') throw new Error('Reset confirmation required')
    if (!await s.provider.send('evm_revert', [snapshot])) throw new Error('Reset failed; restart the local server')
    snapshot = await s.provider.send('evm_snapshot', [])
    items = initialItems(); events.length = 0
-   return { message: 'Local demo reset. Seller has 6 pieces; Buyer and Bidder each have 2. Fake balances and credits restored.' }
+   return { message: 'Local demo reset. Seller has 6 pieces; Buyer and Bidder each have 2; Friend has none. Fake balances and credits restored.' }
   }
   if (body.action === 'advance') { await s.advance(3700); return { message: 'Advanced local-chain time by 3,700 seconds.' } }
   if (body.action === 'mine') { await s.mine(5); return { message: 'Mined five local blocks.' } }
   const item = items.find(i => i.number === Number(body.number))
   const market = s.market.connect(wallet)
-  let tx
+  let tx, recipient
   if (body.action === 'withdraw') tx = await market.withdraw(wallet.address)
   else {
    if (!item) throw new Error('Unknown demo asset')
@@ -69,7 +70,10 @@ async function main() {
     if (wei.lte(0) || wei.gt(ethers.utils.parseEther('10'))) throw new Error('Sandbox price must be greater than zero and at most 10 ETH')
     return wei
    }
-   if (body.action === 'deposit') {
+   if (body.action === 'transfer') {
+    recipient = recipientFor(item, wallet.address, body.recipient, personas)
+    tx = await wallet.sendTransaction({ to: recipient.address, value: 0, data: item.id })
+   } else if (body.action === 'deposit') {
     if (!isOwner) throw new Error('Only the simulated current owner can deposit')
     tx = await wallet.sendTransaction({ to: s.market.address, data: item.id })
    } else if (body.action === 'list') {
@@ -95,13 +99,15 @@ async function main() {
    } else throw new Error('Unknown action')
   }
   const receipt = await tx.wait()
+  if (receipt.status !== 1) throw new Error('Local transaction did not succeed')
+  if (body.action === 'transfer') item.owner = recipient.address
   if (body.action === 'deposit') {
    item.owner = s.market.address; item.depositor = wallet.address
    if (body.autoMine !== false) await s.mine(5)
   }
   consume(receipt)
-  events.push({ action: body.action, number: item && item.number, persona: body.persona, hash: receipt.transactionHash, gas: receipt.gasUsed.toString() })
-  return { message: body.action === 'deposit' && body.autoMine !== false ? 'Piece moved to MY ESCROW. Five local cooldown blocks mined automatically.' : body.action + ' confirmed on LOCAL chain', hash: receipt.transactionHash }
+  events.push({ action: body.action, number: item && item.number, persona: body.persona, recipient: body.action === 'transfer' ? body.recipient : undefined, hash: receipt.transactionHash, gas: receipt.gasUsed.toString() })
+  return { message: body.action === 'transfer' ? 'Phunk #' + item.number + ' sent to ' + body.recipient + '. Switch to that test account to see it in My Wallet.' : body.action === 'deposit' && body.autoMine !== false ? 'Piece moved to MY ESCROW. Five local cooldown blocks mined automatically.' : body.action + ' confirmed on LOCAL chain', hash: receipt.transactionHash }
  }
  const server = http.createServer(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store')
@@ -118,7 +124,26 @@ async function main() {
     return json(200, await serial(async () => ({ ok: true, ...await action(body), state: await state() })))
    }
    if (req.method !== 'GET') return json(405, { error: 'Method not allowed' })
-   if (url.pathname === '/' || url.pathname === '/app.js' || url.pathname === '/style.css') {
+   if (url.pathname === '/ethscriptions/past') { res.writeHead(302, { Location: 'https://trixmoji.netlify.app/ethscriptions/past' }); return res.end() }
+   const explorerFiles = {
+    '/collection': 'classic/pages/phunk-market-preview.html',
+    '/classic/pages/phunk-market-preview.html': 'classic/pages/phunk-market-preview.html',
+    '/assets/css/phunk-market-preview.css': 'assets/css/phunk-market-preview.css',
+    '/assets/js/core/phunk-market-preview.js': 'assets/js/core/phunk-market-preview.js',
+    '/assets/data/phunk-catalog.json': 'assets/data/phunk-catalog.json'
+   }
+   if (Object.prototype.hasOwnProperty.call(explorerFiles, url.pathname)) {
+    const file = path.resolve(__dirname, '../../DOSWAPZ', explorerFiles[url.pathname])
+    if (!fs.existsSync(file)) { res.writeHead(302, { Location: 'https://trixmoji.netlify.app/' + explorerFiles[url.pathname] }); return res.end() }
+    res.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json' })[path.extname(file)] }); return res.end(fs.readFileSync(file))
+   }
+   const catalogImage = /^\/assets\/ethscriptions\/phunks\/img\/(0|[1-9]\d{0,3})\.png$/.exec(url.pathname)
+   if (catalogImage) {
+    const file = path.resolve(__dirname, '../../DOSWAPZ/assets/ethscriptions/phunks/img', catalogImage[1] + '.png')
+    if (fs.existsSync(file)) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(fs.readFileSync(file)) }
+    res.writeHead(302, { Location: 'https://trixmoji.netlify.app' + url.pathname }); return res.end()
+   }
+   if (url.pathname === '/' || url.pathname === '/app.js' || url.pathname === '/style.css' || url.pathname === '/polish.css') {
     const filename = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
     const data = fs.readFileSync(path.join(__dirname, 'web', filename))
     res.writeHead(200, { 'Content-Type': filename.endsWith('.js') ? 'text/javascript' : filename.endsWith('.css') ? 'text/css' : 'text/html' }); return res.end(data)

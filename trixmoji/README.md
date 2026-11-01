@@ -24,6 +24,14 @@ Windows shortcut: double-click `START-MARKET-LAB.cmd` (requires Node.js/npm). If
 
 Use RETURN TO MY WALLET for an inactive escrow deposit, or CANCEL SALE · RETURN TO WALLET for a listed piece. Active auctions must finish and settle. The MY ESCROW tab includes your listed and auctioned deposits so you can always locate them.
 
+### Send to a friend
+
+From MY WALLET, choose SEND TO FRIEND, select a test recipient and confirm the piece number/address. Friend starts with no pieces and 100 fake ETH. Switch TEST AS to Friend to see the gift, send it onward, or deposit/list it. Transfers are 0-value local transactions carrying the simulated Ethscription ID, and charge fake gas only; they do not charge a sale royalty. You cannot send someone else's piece or send one while escrow holds it. Reset returns gifts to their starting owners. Arbitrary mainnet addresses are intentionally not accepted by this local test harness.
+
+### Explore all 10,000
+
+Open `/collection` from the local lab's EXPLORE link. With the sibling DOSWAPZ checkout present, it serves the full collection explorer locally; otherwise it redirects to the hosted artwork preview. The explorer has 10,000 metadata-indexed pieces, 315 trait values in 12 groups, OR-within/AND-across trait filtering, ID/trait/token search, ID and visual-trait-count sorting, 40-item pagination, and clickable trait details/frequencies. It is a read-only catalogue, separate from the ten interactive demo assets.
+
 RESET 10 TEST PIECES asks for confirmation and restores the deployed local chain snapshot, ten starting owners, balances, credits and activity. It does not touch Ethereum mainnet or Netlify. Restarting also resets everything. The server binds only to 127.0.0.1, checks the Host/Origin/header on mutations, and does not expose JSON-RPC or private keys. **Do not deploy sandbox.cjs to a public host.** It is an intentionally auto-signing local test harness.
 
 ## What is implemented

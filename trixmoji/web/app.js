@@ -2,6 +2,7 @@
  'use strict'
  let state, busy = false, view = 'wallet'
  const drafts = new Map()
+ let sending = null
  const el = id => document.getElementById(id)
  const persona = () => el('persona').value
  const short = address => address.slice(0, 7) + '…' + address.slice(-5)
@@ -14,17 +15,17 @@
    try { const r = await fetch('/api/state'); const data = await r.json(); if (!r.ok) throw new Error(data.error); state = data } catch (e) { status(e.message, true) }
   finally { busy = false; draw() }
  }
- async function action(kind, number, price) {
+ async function action(kind, number, price, recipient) {
   if (busy) return
   busy = true; draw(); status('Executing ' + kind + ' on local chain…')
   try {
-   const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sandbox': '1' }, body: JSON.stringify({ action: kind, number, price, persona: persona(), autoMine: el('autoMine').checked, confirm: kind === 'reset' ? 'RESET LOCAL DEMO' : undefined }) })
+   const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Sandbox': '1' }, body: JSON.stringify({ action: kind, number, price, recipient, persona: persona(), autoMine: el('autoMine').checked, confirm: kind === 'reset' ? 'RESET LOCAL DEMO' : undefined }) })
    const data = await r.json(); if (!r.ok || !data.ok) throw new Error(data.error || 'Action failed')
    state = data.state
    if (kind === 'deposit') view = 'escrow'
    if (kind === 'list') view = 'sale'
    if (kind === 'auction') view = 'auction'
-   if (kind === 'buy' || kind === 'cancel') view = 'wallet'
+   if (kind === 'buy' || kind === 'cancel' || kind === 'transfer') view = 'wallet'
    if (kind === 'reset') { view = 'wallet'; drafts.clear() }
    status(data.message + (data.hash ? ' · ' + short(data.hash) : ''))
   } catch (e) { status(e.message, true) }
@@ -43,7 +44,7 @@
   }
   const names = { wallet: 'MY WALLET', escrow: 'MY ESCROW', sale: 'FOR SALE', auction: 'AUCTIONS', all: 'ALL PIECES' }
   const help = {
-   wallet: 'Pieces held by ' + persona() + '. Move one to escrow to list it or start an auction.',
+   wallet: 'Pieces held by ' + persona() + '. Send one as a gift, or move it to escrow to list it for sale.',
    escrow: 'Your deposited pieces. The market holds them until sold, auctioned, or returned. An active auction must finish before return.',
    sale: 'Listings from every test account. Switch to another account to buy; you cannot buy your own listing.',
    auction: 'Active and ended auctions awaiting settlement. Any test account can settle after the timer ends.',
@@ -88,7 +89,10 @@
    if ((depositor && !auction) || (auction && !ended && !depositor)) { const field = document.createElement('label'); field.textContent = auction ? 'YOUR BID · TEST ETH' : 'SALE PRICE / AUCTION RESERVE · TEST ETH'; field.appendChild(price); body.appendChild(field) }
    const actions = document.createElement('div'); actions.className = 'actions'
    function button(text, kind, enabled = true) { const b = document.createElement('button'); b.textContent = text; b.disabled = busy || !enabled; b.onclick = () => action(kind, item.number, price.value); actions.appendChild(b) }
-   if (owner) button('MOVE TO ESCROW', 'deposit')
+   if (owner) {
+    const send = document.createElement('button'); send.textContent = 'SEND TO FRIEND'; send.disabled = busy; send.onclick = () => openSend(item); actions.appendChild(send)
+    button('MOVE TO ESCROW', 'deposit')
+   }
    if (depositor && !auction) { button(listed ? 'UPDATE PRICE' : 'LIST FOR SALE', 'list', item.cooldown === 0); button('START AUCTION', 'auction', item.cooldown === 0); button(listed ? 'CANCEL SALE · RETURN TO WALLET' : 'RETURN TO MY WALLET', 'cancel', item.cooldown === 0) }
    if (listed && !depositor) button('BUY · ' + item.price + ' ETH', 'buy')
    if (auction && !ended && !depositor) button('PLACE BID', 'bid')
@@ -99,9 +103,31 @@
   if (!state.events.length) el('events').textContent = 'No transactions yet. Try moving a piece into escrow.'
   for (const event of state.events) {
    const row = document.createElement('div'); row.className = 'event'
-   const description = document.createElement('span'); description.textContent = event.persona.toUpperCase() + ' · ' + event.action.toUpperCase() + (event.number === undefined ? '' : ' · #' + event.number)
+   const description = document.createElement('span'); description.textContent = event.persona.toUpperCase() + ' · ' + event.action.toUpperCase() + (event.number === undefined ? '' : ' · #' + event.number) + (event.recipient ? ' → ' + event.recipient.toUpperCase() : '')
    const receipt = document.createElement('span'); receipt.textContent = short(event.hash) + ' · ' + event.gas + ' gas'; row.append(description, receipt); el('events').appendChild(row)
   }
+ }
+ function openSend(item) {
+  if (busy) return
+  sending = { number: item.number, from: persona() }
+  el('sendTitle').textContent = 'SEND PHUNK #' + item.number
+  el('sendSummary').textContent = 'From ' + persona() + ': ' + state.accounts[persona()].address
+  el('recipient').innerHTML = ''
+  for (const key of ['friend', 'seller', 'buyer', 'bidder']) {
+   if (key === persona()) continue
+   const option = document.createElement('option'); option.value = key; option.textContent = key.toUpperCase() + ' · ' + short(state.accounts[key].address); el('recipient').appendChild(option)
+  }
+  el('recipientAddress').textContent = 'Recipient: ' + state.accounts[el('recipient').value].address
+  el('sendDialog').showModal()
+ }
+ el('recipient').onchange = () => { el('recipientAddress').textContent = 'Recipient: ' + state.accounts[el('recipient').value].address }
+ el('cancelSend').onclick = () => { sending = null; el('sendDialog').close() }
+ el('sendDialog').addEventListener('cancel', () => { sending = null })
+ el('confirmSend').onclick = () => {
+  if (busy || !sending) return
+  const request = sending; sending = null; el('sendDialog').close()
+  if (request.from !== persona()) { status('Account changed. Open Send again.', true); return }
+  action('transfer', request.number, undefined, el('recipient').value)
  }
  el('persona').onchange = () => { status('Viewing ' + persona() + ' · ' + view + '.'); draw() }
  el('refresh').onclick = refresh
