@@ -17,6 +17,7 @@ contract TrixmojiMarket is EthscriptionsEscrower, ReentrancyGuard, EIP712 {
     uint256 public constant ROYALTY_BPS = 250;
     uint256 public constant TIME_BUFFER = 5 minutes;
     uint256 public constant MIN_INCREMENT_BPS = 500;
+    bytes32 private constant DEPOSIT_AND_LIST_SIGNATURE = keccak256("DEPOSIT_AND_LIST_SIGNATURE");
     bytes32 private constant APPROVAL_TYPEHASH = keccak256(
         "Approval(bytes32 id,address seller,address buyer,uint256 amount,uint256 nonce,uint256 depositBlock,uint256 deadline,uint8 kind,uint256 duration)"
     );
@@ -48,8 +49,27 @@ contract TrixmojiMarket is EthscriptionsEscrower, ReentrancyGuard, EIP712 {
     // ESIP-compatible deposit: 0 ETH, raw creation transaction hash as calldata.
     fallback() external {
         require(msg.sender == tx.origin, "EOA deposit required");
-        _onPotentialEthscriptionDeposit(msg.sender, msg.data);
-        emit Deposited(msg.sender, abi.decode(msg.data, (bytes32)), block.number);
+        bytes32 id;
+        if (msg.data.length == 128) {
+            bytes32 signature;
+            uint256 price;
+            bytes32 buyer;
+            assembly {
+                id := calldataload(0)
+                signature := calldataload(32)
+                price := calldataload(64)
+                buyer := calldataload(96)
+            }
+            require(signature == DEPOSIT_AND_LIST_SIGNATURE && price > 0 && buyer == bytes32(0), "invalid deposit and list");
+            _onPotentialEthscriptionDeposit(msg.sender, msg.data[:32]);
+            uint256 nonce = ++nonces[msg.sender][id];
+            listings[msg.sender][id] = Listing(price, nonce);
+            emit Deposited(msg.sender, id, block.number);
+            emit Listed(msg.sender, id, price, nonce);
+        } else {
+            _onPotentialEthscriptionDeposit(msg.sender, msg.data);
+            emit Deposited(msg.sender, abi.decode(msg.data, (bytes32)), block.number);
+        }
     }
 
     function depositBlock(address seller, bytes32 id) public view returns (uint256) {
